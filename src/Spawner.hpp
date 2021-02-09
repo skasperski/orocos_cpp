@@ -38,7 +38,7 @@ public:
     public:
         ProcessHandle(Deployment *deployment, bool redirectOutput, const std::string &logDir);
         
-        const Deployment &getDeployment() const;
+        const Deployment* getDeployment() const;
         bool alive() const;
         bool wait(int cycles=500, int usecs_between_cycles=500) const;
         void sendSigInt() const;
@@ -84,12 +84,6 @@ public:
      * @return  A Process handle, which may be used to request the process status
      * */
     ProcessHandle &spawnDeployment(Deployment *deployment, bool redirectOutput = true);
-    
-    /**
-     * Get a deployment by its name
-     * @arg dplName
-     */
-    ProcessHandle &getDeployment(const std::string &dplName);
 
     /**
      * This method checks if all spawened processes are still alive
@@ -125,20 +119,9 @@ public:
     void killAll();
     
     /**
-     * This method sends a sigterm to all child processes.
-     * */
-    void sendSigTerm();
-    
-    /**
      * Returns a vector of all deployments, that are currently running.
      * */
     std::vector<const Deployment *> getRunningDeployments();
-    
-    
-    /**
-     * Returns, if the given instance of a deployment is running.
-     * */
-    bool isRunning(const Deployment *instance);
 
     /**
      * Sets the default log directory.
@@ -148,7 +131,8 @@ public:
     
 private:
     
-    std::vector<ProcessHandle *> handles;
+    typedef std::map< std::string, ProcessHandle > ProcessMap;
+    ProcessMap mProcessMap;
 };
 }//end of namespace.
 

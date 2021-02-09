@@ -204,9 +204,9 @@ bool Spawner::ProcessHandle::wait(int cycles, int usecs_between_cycles) const
     return true;
 }
 
-const Deployment& Spawner::ProcessHandle::getDeployment() const
+const Deployment* Spawner::ProcessHandle::getDeployment() const
 {
-    return *deployment;
+    return deployment;
 }
 
 void Spawner::ProcessHandle::sendSigKill() const
@@ -254,26 +254,15 @@ Spawner::ProcessHandle& Spawner::spawnDeployment(Deployment* deployment, bool re
         deployment->renameTask(deployment->getLoggerName(), deployment->getName() + "_Logger");
     }
 
-    ProcessHandle *handle = new ProcessHandle(deployment, redirectOutput, logDir);
-    
-    handles.push_back(handle);
+    ProcessHandle handle(deployment, redirectOutput, logDir);
+    mProcessMap.emplace(deployment->getName(), handle);
 
     for(const std::string &task: deployment->getTaskNames())
     {
         notReadyList.push_back(task);
     }
     
-    return *handle;
-}
-
-Spawner::ProcessHandle& Spawner::getDeployment(const std::string& dplName)
-{
-    for(Spawner::ProcessHandle* h : handles)
-    {
-        if(h->getDeployment().getName() == dplName)
-            return *h;
-    }
-    throw std::runtime_error(std::string("Deployment does not exist: ") + dplName);
+    return mProcessMap.at(deployment->getName());
 }
 
 Spawner::ProcessHandle& Spawner::spawnDeployment(const std::string& dplName, bool redirectOutput)
@@ -286,9 +275,9 @@ Spawner::ProcessHandle& Spawner::spawnDeployment(const std::string& dplName, boo
 bool Spawner::checkAllProcesses()
 {
     bool allOk = true;
-    for(ProcessHandle *handle : handles)
+    for(ProcessMap::value_type p : mProcessMap)
     {
-        if(!handle->alive())
+        if(!p.second.alive())
         {
             allOk = false;
             //we do not break here, so that we can 
@@ -338,7 +327,7 @@ void Spawner::waitUntilAllReady(const base::Time& timeout)
 
 bool Spawner::killDeployment(const std::string &dplName)
 {
-    Spawner::ProcessHandle &handle = getDeployment(dplName);
+    Spawner::ProcessHandle &handle = mProcessMap.at(dplName);
 
     handle.sendSigInt();
     if(!handle.wait())
@@ -351,6 +340,7 @@ bool Spawner::killDeployment(const std::string &dplName)
             return false;
         }
     }
+    mProcessMap.erase(dplName);
     return true;
 }
 
@@ -358,9 +348,10 @@ void Spawner::killAll()
 {
     //first we try to stop and cleanup the processes
     //ask all processes to terminate
-    for(ProcessHandle *handle : handles)
+    for(ProcessMap::value_type p : mProcessMap)
     {
-        for(const std::string &tName: handle->getDeployment().getTaskNames())
+        ProcessHandle& handle = p.second;
+        for(const std::string &tName: handle.getDeployment()->getTaskNames())
         {
             try {
                 std::cout << "Trying to stop task " << tName << std::endl;
@@ -376,55 +367,30 @@ void Spawner::killAll()
     }    
     
     //ask all processes to terminate
-    for(ProcessHandle *handle : handles)
+    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end(); it++)
     {
-        if(handle->alive())
+        ProcessHandle& handle = it->second;
+        if(handle.alive())
         {
             //we send a sigint here, as this should trigger a clean shutdown
-            handle->sendSigInt();
+            handle.sendSigInt();
+        }else
+        {
+            mProcessMap.erase(it);
         }
     }
-    
-    base::Time waitTime = base::Time::fromMilliseconds(100);
-    base::Time startTime = base::Time::now();
-    
-    bool allDead = false;
     
     //wait until they terminated
-    while(!allDead && base::Time::now() - startTime < waitTime)
+    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end(); it++)
     {
-        allDead = false;
-        for(ProcessHandle *handle : handles)
+        ProcessHandle& handle = it->second;
+        if(!handle.wait())
         {
-            if(handle->alive())
-            {
-                allDead = true;
-            }
+            handle.sendSigKill();
         }
     }
-    
-    //someone just won't terminate... send sigkill
-    if(!allDead)
-    {
-        for(ProcessHandle *handle : handles)
-        {
-            if(handle->alive())
-            {
-                handle->sendSigKill();
-            }
-        }
-    }
+    mProcessMap.clear();
 }
-
-void Spawner::sendSigTerm()
-{
-    //ask all processes to terminate
-    for(ProcessHandle *handle : handles)
-    {
-        handle->sendSigTerm();
-    }
-}
-
 
 void Spawner::ProcessHandle::redirectOutput(const std::string& filename)
 {
@@ -450,26 +416,12 @@ void Spawner::ProcessHandle::redirectOutput(const std::string& filename)
 std::vector< const Deployment* > Spawner::getRunningDeployments()
 {
     std::vector< const Deployment* > ret;
-    ret.reserve(handles.size());
-    for(ProcessHandle *handle: handles)
+    ret.reserve(mProcessMap.size());
+    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end(); it++)
     {
-        ret.push_back(&(handle->getDeployment()));
+        ret.push_back(it->second.getDeployment());
     }
-    
     return ret;
-}
-
-bool Spawner::isRunning(const Deployment* instance)
-{
-    for(ProcessHandle *handle: handles)
-    {
-        if(&(handle->getDeployment()) == instance)
-        {
-            return true;
-        }
-    }
-    
-    return false;
 }
 
 void Spawner::setLogDirectory(const std::string& log_folder)
