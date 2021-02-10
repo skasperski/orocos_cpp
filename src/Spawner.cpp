@@ -347,13 +347,14 @@ bool Spawner::killDeployment(const std::string &dplName)
 void Spawner::killAll()
 {
     //ask all processes to terminate
-    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end(); it++)
+    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end();)
     {
         ProcessHandle& handle = it->second;
         if(handle.alive())
         {
             //we send a sigint here, as this should trigger a clean shutdown
             handle.sendSigInt();
+            it++;
         }else
         {
             mProcessMap.erase(it);
@@ -361,13 +362,26 @@ void Spawner::killAll()
     }
     
     //wait until they terminated
-    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end(); it++)
+    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end();)
     {
         ProcessHandle& handle = it->second;
-        if(!handle.wait())
+        if(handle.wait())
         {
+            mProcessMap.erase(it);
+        }else
+        {
+            std::cout << "Escalating to SIGKILL for process: "
+                << it->first << std::endl;
             handle.sendSigKill();
+            it++;
         }
+    }
+    
+    //wait until they died
+    for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end();)
+    {
+        if(it->second.wait())
+            std::cout << "Process '" << it->first << "' could not be terminated." << std::endl;
     }
     mProcessMap.clear();
 }
