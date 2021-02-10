@@ -346,26 +346,6 @@ bool Spawner::killDeployment(const std::string &dplName)
 
 void Spawner::killAll()
 {
-    //first we try to stop and cleanup the processes
-    //ask all processes to terminate
-    for(ProcessMap::value_type p : mProcessMap)
-    {
-        ProcessHandle& handle = p.second;
-        for(const std::string &tName: handle.getDeployment()->getTaskNames())
-        {
-            try {
-                std::cout << "Trying to stop task " << tName << std::endl;
-                RTT::corba::TaskContextProxy *proxy = RTT::corba::TaskContextProxy::Create(tName, false);
-                if(proxy && proxy->isRunning())
-                    proxy->stop();
-            }
-            catch (...)
-            {
-                //don't care, we want to shut down anyways
-            }
-        }
-    }    
-    
     //ask all processes to terminate
     for(ProcessMap::iterator it = mProcessMap.begin(); it != mProcessMap.end(); it++)
     {
