@@ -32,7 +32,6 @@ public:
     {
         pid_t pid;
         void redirectOutput(const std::string &filename);
-        std::string processName;
         
         Deployment *deployment;
     public:
