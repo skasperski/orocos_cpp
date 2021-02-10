@@ -183,8 +183,11 @@ bool Spawner::ProcessHandle::alive() const
         return true;
     else if(ret == pid)
         return false;
-    else if(ret == -1 )
-        throw std::runtime_error(std::string("waitpid failed: ") + strerror(errno));
+    else if(ret == -1)
+        if(errno == ECHILD)
+            return false;
+        else
+            throw std::runtime_error(std::string("waitpid failed: ") + strerror(errno));
     else
         throw std::runtime_error("waitpid returned undocumented value");
 }
@@ -246,13 +249,18 @@ Spawner::ProcessHandle& Spawner::spawnDeployment(Deployment* deployment, bool re
 
     // rename the logger of default deployments
     // this guarantees that every task has it's own logger
+/*
     if(deployment->getName().find("orogen_default_") == 0)
     {
         deployment->renameTask(deployment->getLoggerName(), deployment->getName() + "_Logger");
     }
+*/
+    if(mProcessMap.find(deployment->getName()) != mProcessMap.end())
+    {
+        throw std::runtime_error(std::string("A deployment with this name already exists: ") + deployment->getName());
+    }
 
-    ProcessHandle handle(deployment, redirectOutput, logDir);
-    mProcessMap.emplace(deployment->getName(), handle);
+    mProcessMap.emplace(deployment->getName(), ProcessHandle(deployment, redirectOutput, logDir));
 
     for(const std::string &task: deployment->getTaskNames())
     {
@@ -351,10 +359,10 @@ void Spawner::killAll()
         {
             //we send a sigint here, as this should trigger a clean shutdown
             handle.sendSigInt();
-            it++;
+            ++it;
         }else
         {
-            mProcessMap.erase(it);
+            it = mProcessMap.erase(it);
         }
     }
     
@@ -364,13 +372,15 @@ void Spawner::killAll()
         ProcessHandle& handle = it->second;
         if(handle.wait())
         {
-            mProcessMap.erase(it);
+            std::cout << "Successfully terminated process: "
+                << it->first << std::endl;
+            it = mProcessMap.erase(it);
         }else
         {
             std::cout << "Escalating to SIGKILL for process: "
                 << it->first << std::endl;
             handle.sendSigKill();
-            it++;
+            ++it;
         }
     }
     
